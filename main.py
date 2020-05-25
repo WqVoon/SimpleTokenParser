@@ -3,9 +3,9 @@ from typing import List, Dict, Set, Any
 
 
 def debug_output(is_debug):
-    def output(msg):
+    def output(*msg):
         if is_debug:
-            print(msg)
+            print("[DEBUG]", *msg)
 
     return output
 
@@ -81,11 +81,23 @@ class AutoMachine:
 
 
 class TokenProcessor:
+    buffer: List[str]
     file_handler: _io.TextIOWrapper
+
+    KT = (
+        'auto', 'char', 'const', 'double', 'enum', 'float',
+        'inline', 'int', 'long', 'register', 'restrict',
+        'short', 'signed', 'static', 'struct', 'typedef',
+        'union', 'unsigned', 'void', 'volatile',
+        'break', 'case', 'continue', 'default', 'do', 'else',
+        'for', 'goto', 'if', 'return', 'sizeof', 'switch', 'while'
+    )
+    PT = (
+        
+    )
 
     def __init__(self, fh):
         self.file_handler = fh
-        self.get_eof = False
 
         self.ch = ''
         self.tokens = []
@@ -95,8 +107,6 @@ class TokenProcessor:
         self.cT = []
         self.ST = []
         self.CT = []
-        self.KT = []
-        self.PT = []
         self.ET = ()
 
         self.id_am = TokenProcessor.init_id_auto_machine()
@@ -113,26 +123,30 @@ class TokenProcessor:
 
         :return: None
         """
-        while not self.get_eof:
+        while True:
             self.buffer.clear()
 
-            while self.ch.isalnum() or self.ch == '_' or self.ch == '.':
-                self.buffer.append(self.ch)
-                self.ch = self.getchar()
+            try:
+                while self.ch.isalnum() or self.ch == '_' or self.ch == '.':
+                    self.buffer.append(self.ch)
+                    self.ch = self.getchar()
 
-            if self.buffer:
+                if self.buffer:
+                    self.match()
+                    continue
+
+                while not self.ch.isalnum() and self.ch != '_':
+                    self.buffer.append(self.ch)
+                    self.ch = self.getchar()
+
+            except EOFError:
+                break
+
+            finally:
                 self.match()
-                continue
-
-            while not self.ch.isalnum() and self.ch != '_':
-                self.buffer.append(self.ch)
-                self.ch = self.getchar()
-
-            self.match()
 
     def match(self):
         """
-        TODO: 解决匹配时一直循环的问题
         分别调用各种匹配模式来匹配 self.buffer 中的字符流
 
         若其中一个模式匹配命中，则：
@@ -142,23 +156,35 @@ class TokenProcessor:
         :return: None
         """
         while self.buffer:
+            log("当前buffer:", self.buffer)
+            if self.buffer[0].isspace() or not self.buffer[0]:
+                self.buffer.pop(0)
+                continue
+
+            log("test keywords")
             if self.is_keywords():
                 continue
-            log("test keywords")
+
+            log("test identifier")
             if self.is_id():
                 continue
+
             log("test number")
             if self.is_number():
                 continue
+
             log("test char")
             if self.is_char():
                 continue
+
             log("test string")
             if self.is_string():
                 continue
+
             log("test partition")
             if self.is_partition():
                 continue
+
             log("error")
             self.is_an_error()
 
@@ -198,9 +224,9 @@ class TokenProcessor:
     def is_number(self):
         token_id = 0
 
-        index, target, is_end = self.int_am.validate(self.buffer)
+        index, target, is_end = self.float_am.validate(self.buffer)
         if not target:
-            index, target, is_end = self.float_am.validate(self.buffer)
+            index, target, is_end = self.int_am.validate(self.buffer)
         index = index + 1 if is_end else index
 
         if target:
@@ -237,18 +263,19 @@ class TokenProcessor:
         return target
 
     def is_an_error(self):
-        pass
+        log("不合法的token：", self.buffer)
+        self.buffer.clear()
 
     def getchar(self):
         """
         从 self.file_handler 中读取一个字符
-        如果读取到空字符则设置 self.get_eof 为 True
+        如果读取到空字符则抛出 EOFError
 
         :return: 读取到的字符
         """
         tmp = self.file_handler.read(1)
         if not tmp:
-            self.get_eof = True
+            raise EOFError
         return tmp
 
     def __getitem__(self, item: str):
