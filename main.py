@@ -11,7 +11,7 @@ def debug_output(is_debug):
 
 
 # 输出测试信息，改为 False 则不会输出
-log = debug_output(True)
+log = debug_output(False)
 
 
 class State:
@@ -85,11 +85,14 @@ class TokenProcessor:
     file_handler: _io.TextIOWrapper
 
     double_size_char = (
-
+        '->', '--', '-=', '++', '+=',
+        '&=', '&&', '!=', '|=', '||',
+        '<=', '<<', '>=', '>>', '*=',
+        '/=', '%=', '^=', '##', '=='
     )
 
     triple_size_char = (
-
+        '<<=', '>>=', '...'
     )
 
     KT = (
@@ -101,7 +104,10 @@ class TokenProcessor:
         'for', 'goto', 'if', 'return', 'sizeof', 'switch', 'while'
     )
     PT = (
-
+        *triple_size_char, *double_size_char,
+        '{', '}', '[', ']', '(', ')', '.', '&', '*',
+        '+', '-', '~', '!', '/', '%', '<', '>', '^',
+        '|', '?', ':', ';', '=', ',', '#'
     )
 
     def __init__(self, fh):
@@ -258,44 +264,33 @@ class TokenProcessor:
         pass
 
     def is_partition(self):
-        # TODO: 不能解决 、; 这样的序列，;会被当作错误
         buffer = self.buffer
         target = False
-        index = 0
-        char = ''
-        loop_length = len(buffer)
+        tail_index = 1
 
-        while index < loop_length:
-            try:
-                tail_index = index + 1
+        try:
+            if len(buffer) >= 3 and \
+                    self.is_triple_size_char(
+                        buffer[0],
+                        buffer[1],
+                        buffer[2]):
+                tail_index += 2
 
-                if buffer[index] == '\'' or '\"':
-                    break
+            elif len(buffer) >= 2 and \
+                    self.is_double_size_char(
+                        buffer[0],
+                        buffer[1]):
+                tail_index += 1
 
-                if index < loop_length - 1 and \
-                        self.is_double_size_char(
-                            buffer[index], buffer[index+1]):
-                    tail_index += 1
+            char = ''.join(buffer[:tail_index])
 
-                if index < loop_length - 2 and \
-                        self.is_triple_size_char(
-                            buffer[index], buffer[index+1], buffer[index+2]):
-                    tail_index += 1
+            token_id = self.PT.index(char)
+            self.tokens.append(('PT', token_id))
+            buffer[:tail_index] = ''
+            target = True
 
-                char = ''.join(buffer[index: tail_index])
-
-                for i in range(index, tail_index):
-                    buffer[i] = ''
-
-                token_id = self.PT.index(char)
-                self.tokens.append(('PT', token_id))
-
-                target = True
-
-                index += 1
-
-            except ValueError:
-                self.is_an_error(char)
+        except ValueError:
+            pass
 
         return target
 
@@ -369,6 +364,7 @@ class TokenProcessor:
         am.make_pair(0, '', 0)
         am.make_pair(1, '', 1)
 
+        # TODO: 这里的 1 使得自动机无法识别数字0，但为了其他进制数所以先不改
         for i in range(1, 9):
             am.make_pair(0, str(i), 1)
 
