@@ -84,6 +84,14 @@ class TokenProcessor:
     buffer: List[str]
     file_handler: _io.TextIOWrapper
 
+    double_size_char = (
+
+    )
+
+    triple_size_char = (
+
+    )
+
     KT = (
         'auto', 'char', 'const', 'double', 'enum', 'float',
         'inline', 'int', 'long', 'register', 'restrict',
@@ -93,7 +101,7 @@ class TokenProcessor:
         'for', 'goto', 'if', 'return', 'sizeof', 'switch', 'while'
     )
     PT = (
-        
+
     )
 
     def __init__(self, fh):
@@ -127,7 +135,8 @@ class TokenProcessor:
             self.buffer.clear()
 
             try:
-                while self.ch.isalnum() or self.ch == '_' or self.ch == '.':
+                while self.ch.isalnum() or self.ch == '_' or self.ch == '.' \
+                        or self.ch == '+' or self.ch == '-':
                     self.buffer.append(self.ch)
                     self.ch = self.getchar()
 
@@ -186,7 +195,7 @@ class TokenProcessor:
                 continue
 
             log("error")
-            self.is_an_error()
+            self.is_an_error(self.buffer.pop(0))
 
     def is_keywords(self):
         full_str = ''.join(self.buffer)
@@ -249,22 +258,76 @@ class TokenProcessor:
         pass
 
     def is_partition(self):
+        # TODO: 不能解决 、; 这样的序列，;会被当作错误
+        buffer = self.buffer
         target = False
+        index = 0
+        char = ''
+        loop_length = len(buffer)
 
-        for index, char in enumerate(self.buffer, 0):
+        while index < loop_length:
             try:
+                tail_index = index + 1
+
+                if buffer[index] == '\'' or '\"':
+                    break
+
+                if index < loop_length - 1 and \
+                        self.is_double_size_char(
+                            buffer[index], buffer[index+1]):
+                    tail_index += 1
+
+                if index < loop_length - 2 and \
+                        self.is_triple_size_char(
+                            buffer[index], buffer[index+1], buffer[index+2]):
+                    tail_index += 1
+
+                char = ''.join(buffer[index: tail_index])
+
+                for i in range(index, tail_index):
+                    buffer[i] = ''
+
                 token_id = self.PT.index(char)
                 self.tokens.append(('PT', token_id))
-                self.buffer.pop(0)
+
                 target = True
+
+                index += 1
+
             except ValueError:
-                break
+                self.is_an_error(char)
 
         return target
 
-    def is_an_error(self):
-        log("不合法的token：", self.buffer)
-        self.buffer.clear()
+    @staticmethod
+    def is_an_error(token):
+        log("不合法的token：", token)
+
+    @staticmethod
+    def is_double_size_char(char1, char2):
+        """
+        识别是否可以组成一个双字节字符
+
+        :param char1: 第一个字符
+        :param char2: 第二个字符
+        :return: 是否匹配
+        """
+        for c1, c2 in TokenProcessor.double_size_char:
+            if c1 == char1 and c2 == char2:
+                return True
+        else:
+            return False
+
+    @staticmethod
+    def is_triple_size_char(char1, char2, char3):
+        """
+        识别是否可以组成一个三字节字符
+        """
+        for c1, c2, c3 in TokenProcessor.triple_size_char:
+            if c1 == char1 and c2 == char2 and c3 == char3:
+                return True
+        else:
+            return False
 
     def getchar(self):
         """
