@@ -3,16 +3,22 @@ from os import sys
 from typing import List, Dict, Set, Any
 
 
-def debug_output(is_debug):
-    def output(*msg):
-        if is_debug:
-            print("[DEBUG]", *msg, file=sys.stderr)
+class DebugOutput:
+    """
+    若 self.is_develop 为 True 则输出 Debug 信息，否则不输出
+    文件提供 log 作为本类的全局实例，可在运行时动态修改
+    """
 
-    return output
+    def __init__(self, output_msg):
+        self.is_develop = output_msg
+
+    def __call__(self, *msg):
+        if self.is_develop:
+            print("[DEBUG]", *msg, file=sys.stderr)
 
 
 # 输出测试信息，改为 False 则不会输出
-log = debug_output(False)
+log = DebugOutput(False)
 
 
 class ParseError(Exception):
@@ -120,6 +126,7 @@ class TokenProcessor:
 
     def __init__(self, fh):
         self.file_handler = fh
+        self.lineno = 1
 
         self.ch = ''
         self.tokens = []
@@ -182,7 +189,8 @@ class TokenProcessor:
             log("当前buffer:", self.buffer)
             if self.buffer[0].isspace() or not self.buffer[0]:
                 log("判断为 [空字符]")
-                self.buffer.pop(0)
+                if self.buffer.pop(0) == '\n':
+                    self.lineno += 1
                 continue
 
             if self.is_keywords():
@@ -254,26 +262,31 @@ class TokenProcessor:
         if self.buffer[0] != '\"':
             return False
 
+        # TODO: c 语言中可使用 \ 来分隔多行字符串
+        start_lineno = self.lineno
         pre = now = ''
         index = 1
-        while pre == '\\' or now != '\"':
-            try:
-                pre = now
-                now = self.buffer[index]
-            except IndexError:
+        try:
+            while pre == '\\' or now != '\"':
                 try:
+                    pre = now
+                    now = self.buffer[index]
+                except IndexError:
                     log("尝试从文件中读取一个字符到buffer中")
+                    if self.ch == '\n':
+                        raise EOFError
                     now = self.ch
                     self.buffer.append(self.ch)
                     self.ch = self.getchar()
                     log("当前buffer:", self.buffer)
-                except EOFError as e:
-                    log("字符串不完整")
-                    self.is_an_error(''.join(self.buffer))
-                    raise ParseError from e
-            finally:
-                index += 1
-                log("pre=%s, now=%s, index=%d" % (pre, now, index))
+                finally:
+                    index += 1
+                    log("pre=%s, now=%s, index=%d" % (pre, now, index))
+        except EOFError as e:
+            log("字符串不完整")
+            self.lineno = start_lineno
+            self.is_an_error(''.join(self.buffer), "不完整的字符串:")
+            raise ParseError from e
 
         self.insert_token_into_symtable(index, 'ST')
 
@@ -310,9 +323,9 @@ class TokenProcessor:
 
         return target
 
-    @staticmethod
-    def is_an_error(token, msg="不合法的token:"):
-        print(msg, token, file=sys.stderr)
+    def is_an_error(self, token, msg="不合法的token:"):
+        print("<'%s', line %d>" % (self.file_handler.name, self.lineno),
+              msg, token, file=sys.stderr)
 
     @staticmethod
     def is_double_size_char(char1, char2):
@@ -397,8 +410,7 @@ class TokenProcessor:
     def init_int_auto_machine(cls):
         am = AutoMachine()
 
-        am.make_pair(0, '', 0)
-        am.make_pair(1, '', 1)
+        am.make_pair(0, '0', 2)
 
         # TODO: 这里的 1 使得自动机无法识别数字0，但为了其他进制数所以先不改
         for i in range(1, 9):
@@ -406,8 +418,20 @@ class TokenProcessor:
 
         for i in range(9):
             am.make_pair(1, str(i), 1)
+            am.make_pair(4, str(i), 5)
 
-        am.set_end(1)
+        for i in range(7):
+            am.make_pair(2, str(i), 3)
+            am.make_pair(3, str(i), 3)
+
+        am.make_pair(2, 'x', 4)
+        am.make_pair(2, 'X', 4)
+
+        for i in "abcdefABCDEF":
+            am.make_pair(4, i, 5)
+            am.make_pair(5, i, 5)
+
+        am.set_end(1, 2, 3, 5)
 
         return am
 
