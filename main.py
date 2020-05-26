@@ -1,17 +1,25 @@
 import _io
+from os import sys
 from typing import List, Dict, Set, Any
 
 
 def debug_output(is_debug):
     def output(*msg):
         if is_debug:
-            print("[DEBUG]", *msg)
+            print("[DEBUG]", *msg, file=sys.stderr)
 
     return output
 
 
 # 输出测试信息，改为 False 则不会输出
 log = debug_output(False)
+
+
+class ParseError(Exception):
+    """
+    Token 解析失败的异常
+    """
+    pass
 
 
 class State:
@@ -173,34 +181,35 @@ class TokenProcessor:
         while self.buffer:
             log("当前buffer:", self.buffer)
             if self.buffer[0].isspace() or not self.buffer[0]:
+                log("判断为 [空字符]")
                 self.buffer.pop(0)
                 continue
 
-            log("test keywords")
             if self.is_keywords():
+                log("判断为 [关键字]")
                 continue
 
-            log("test identifier")
             if self.is_id():
+                log("判断为 [标识符]")
                 continue
 
-            log("test number")
             if self.is_number():
+                log("判断为 [数字]")
                 continue
 
-            log("test char")
             if self.is_char():
+                log("判断为 [字符]")
                 continue
 
-            log("test string")
             if self.is_string():
+                log("判断为 [字符串]")
                 continue
 
-            log("test partition")
             if self.is_partition():
+                log("判断为 [界符]")
                 continue
 
-            log("error")
+            log("判断为 [错误]")
             self.is_an_error(self.buffer.pop(0))
 
     def is_keywords(self):
@@ -218,42 +227,23 @@ class TokenProcessor:
 
     def is_id(self):
         target: bool
-        token_id = 0
 
         index, target, is_end = self.id_am.validate(self.buffer)
         index = index + 1 if is_end else index
 
         if target:
-            full_str = ''.join(self.buffer[:index])
-            try:
-                token_id = self.iT.index(full_str)
-            except ValueError:
-                self.iT.append(full_str)
-                token_id = len(self.iT) - 1
-            finally:
-                self.tokens.append(('iT', token_id))
-                self.buffer = self.buffer[index:]
+            self.insert_token_into_symtable(index, 'iT')
 
         return target
 
     def is_number(self):
-        token_id = 0
-
         index, target, is_end = self.float_am.validate(self.buffer)
         if not target:
             index, target, is_end = self.int_am.validate(self.buffer)
         index = index + 1 if is_end else index
 
         if target:
-            full_str = ''.join(self.buffer[:index])
-            try:
-                token_id = self.CT.index(full_str)
-            except ValueError:
-                self.CT.append(full_str)
-                token_id = len(self.CT) - 1
-            finally:
-                self.tokens.append(('CT', token_id))
-                self.buffer = self.buffer[index:]
+            self.insert_token_into_symtable(index, 'CT')
 
         return target
 
@@ -261,7 +251,33 @@ class TokenProcessor:
         pass
 
     def is_string(self):
-        pass
+        if self.buffer[0] != '\"':
+            return False
+
+        pre = now = ''
+        index = 1
+        while pre == '\\' or now != '\"':
+            try:
+                pre = now
+                now = self.buffer[index]
+            except IndexError:
+                try:
+                    log("尝试从文件中读取一个字符到buffer中")
+                    now = self.ch
+                    self.buffer.append(self.ch)
+                    self.ch = self.getchar()
+                    log("当前buffer:", self.buffer)
+                except EOFError as e:
+                    log("字符串不完整")
+                    self.is_an_error(''.join(self.buffer))
+                    raise ParseError from e
+            finally:
+                index += 1
+                log("pre=%s, now=%s, index=%d" % (pre, now, index))
+
+        self.insert_token_into_symtable(index, 'ST')
+
+        return True
 
     def is_partition(self):
         buffer = self.buffer
@@ -295,8 +311,8 @@ class TokenProcessor:
         return target
 
     @staticmethod
-    def is_an_error(token):
-        log("不合法的token：", token)
+    def is_an_error(token, msg="不合法的token:"):
+        print(msg, token, file=sys.stderr)
 
     @staticmethod
     def is_double_size_char(char1, char2):
@@ -323,6 +339,26 @@ class TokenProcessor:
                 return True
         else:
             return False
+
+    def insert_token_into_symtable(self, tail, table_name):
+        """
+        将 self.buffer 中的一部分内容插入到 table_name 指定的符号表中
+        同时将这部分内容从 self.buffer 中清空
+
+        :param tail: self.buffer 中有效部分的长度加一
+        :param table_name: 试图插入的符号表名
+        :return:
+        """
+        token_id = 0
+        full_str = ''.join(self.buffer[:tail])
+        try:
+            token_id = self[table_name].index(full_str)
+        except ValueError:
+            self[table_name].append(full_str)
+            token_id = len(self[table_name]) - 1
+        finally:
+            self.tokens.append((table_name, token_id))
+            self.buffer = self.buffer[tail:]
 
     def getchar(self):
         """
