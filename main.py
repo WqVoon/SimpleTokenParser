@@ -345,7 +345,7 @@ class TokenProcessor:
                     pre = now
                     now = self.buffer[index]
                     if now == '\n':
-                        raise EOFError
+                        raise ParseError
                 except IndexError:
                     log("尝试从文件中读取一个字符到buffer中")
                     now = self.ch
@@ -354,11 +354,15 @@ class TokenProcessor:
                     log("当前buffer:", self.buffer)
                 finally:
                     index += 1
-        except EOFError as e:
+        except (EOFError, ParseError) as err:
             log("字符或字符串不完整")
             self.lineno = start_lineno
             self.is_an_error(''.join(self.buffer[:index]), '引号不配对:')
-            raise ParseError from e
+            if isinstance(err, ParseError):
+                raise err
+            else:
+                raise ParseError from err
+
         return index
 
     @staticmethod
