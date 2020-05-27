@@ -91,7 +91,9 @@ class AutoMachine:
         else:
             is_end = True
 
-        return index, cur_state in self.end_states, is_end
+        return (index if not is_end else index + 1,
+                cur_state in self.end_states,
+                is_end)
 
 
 class TokenProcessor:
@@ -138,6 +140,8 @@ class TokenProcessor:
         self.CT = []
         self.ET = ()
 
+        # TODO: 尝试把自动机设置为类公用的属性
+        self.char_am = TokenProcessor.init_char_auto_machine()
         self.id_am = TokenProcessor.init_id_auto_machine()
         self.int_am = TokenProcessor.init_int_auto_machine()
         self.float_am = TokenProcessor.init_float_auto_machine()
@@ -237,7 +241,6 @@ class TokenProcessor:
         target: bool
 
         index, target, is_end = self.id_am.validate(self.buffer)
-        index = index + 1 if is_end else index
 
         if target:
             self.insert_token_into_symtable(index, 'iT')
@@ -248,7 +251,6 @@ class TokenProcessor:
         index, target, is_end = self.float_am.validate(self.buffer)
         if not target:
             index, target, is_end = self.int_am.validate(self.buffer)
-        index = index + 1 if is_end else index
 
         if target:
             self.insert_token_into_symtable(index, 'CT')
@@ -256,37 +258,37 @@ class TokenProcessor:
         return target
 
     def is_char(self):
-        pass
+        if self.buffer[0] != '\'':
+            return False
+
+        quotation_index = self.read_char_until_quotation_mark('\'')
+        if quotation_index == 2:
+            self.is_an_error('', "单引号内不能为空")
+            raise ParseError
+
+        valid_index = 0
+        if quotation_index > 3:
+            valid_index, target, is_end = self.char_am.validate(self.buffer)
+
+            if not target:
+                valid_index = 2
+            if self.buffer[valid_index] != '\'':
+                self.is_an_error(''.join(self.buffer[:valid_index]), "过长的字符:")
+
+            self.buffer[valid_index] = '\''
+            valid_index += 1
+
+        self.insert_token_into_symtable(valid_index, 'cT')
+        self.buffer[:quotation_index] = ''
+
+        return True
 
     def is_string(self):
         if self.buffer[0] != '\"':
             return False
 
         # TODO: c 语言中可使用 \ 来分隔多行字符串
-        start_lineno = self.lineno
-        pre = now = ''
-        index = 1
-        try:
-            while pre == '\\' or now != '\"':
-                try:
-                    pre = now
-                    now = self.buffer[index]
-                except IndexError:
-                    log("尝试从文件中读取一个字符到buffer中")
-                    if self.ch == '\n':
-                        raise EOFError
-                    now = self.ch
-                    self.buffer.append(self.ch)
-                    self.ch = self.getchar()
-                    log("当前buffer:", self.buffer)
-                finally:
-                    index += 1
-                    log("pre=%s, now=%s, index=%d" % (pre, now, index))
-        except EOFError as e:
-            log("字符串不完整")
-            self.lineno = start_lineno
-            self.is_an_error(''.join(self.buffer), "不完整的字符串:")
-            raise ParseError from e
+        index = self.read_char_until_quotation_mark('\"')
 
         self.insert_token_into_symtable(index, 'ST')
 
@@ -323,9 +325,41 @@ class TokenProcessor:
 
         return target
 
-    def is_an_error(self, token, msg="不合法的token:"):
+    def is_an_error(self, token: str, msg: str = "不合法的token:"):
         print("<'%s', line %d>" % (self.file_handler.name, self.lineno),
               msg, token, file=sys.stderr)
+
+    def read_char_until_quotation_mark(self, mark: str):
+        """
+        读取字符到 self.buffer 中，直到遇到单引号或双引号
+
+        :param mark: 单引号或双引号，其他符号暂时无意义
+        :return: 后面的引号的下标 + 1
+        """
+        start_lineno: int = self.lineno
+        pre = now = ''
+        index = 1
+        try:
+            while pre == '\\' or now != mark:
+                try:
+                    pre = now
+                    now = self.buffer[index]
+                    if now == '\n':
+                        raise EOFError
+                except IndexError:
+                    log("尝试从文件中读取一个字符到buffer中")
+                    now = self.ch
+                    self.buffer.append(self.ch)
+                    self.ch = self.getchar()
+                    log("当前buffer:", self.buffer)
+                finally:
+                    index += 1
+        except EOFError as e:
+            log("字符或字符串不完整")
+            self.lineno = start_lineno
+            self.is_an_error(''.join(self.buffer[:index]), '引号不配对:')
+            raise ParseError from e
+        return index
 
     @staticmethod
     def is_double_size_char(char1, char2):
@@ -408,26 +442,26 @@ class TokenProcessor:
 
     @classmethod
     def init_int_auto_machine(cls):
+        valid_char = "abcdefABCDEF"
         am = AutoMachine()
 
         am.make_pair(0, '0', 2)
 
-        # TODO: 这里的 1 使得自动机无法识别数字0，但为了其他进制数所以先不改
-        for i in range(1, 9):
+        for i in range(1, 10):
             am.make_pair(0, str(i), 1)
 
-        for i in range(9):
+        for i in range(10):
             am.make_pair(1, str(i), 1)
             am.make_pair(4, str(i), 5)
 
-        for i in range(7):
+        for i in range(8):
             am.make_pair(2, str(i), 3)
             am.make_pair(3, str(i), 3)
 
         am.make_pair(2, 'x', 4)
         am.make_pair(2, 'X', 4)
 
-        for i in "abcdefABCDEF":
+        for i in valid_char:
             am.make_pair(4, i, 5)
             am.make_pair(5, i, 5)
 
@@ -439,13 +473,10 @@ class TokenProcessor:
     def init_float_auto_machine(cls):
         am = AutoMachine()
 
-        for i in range(6):
-            am.make_pair(i, '', i)
-
         am.make_pair(0, '.', 1)
         am.make_pair(3, '.', 2)
 
-        for i in range(9):
+        for i in range(10):
             tmp: str = str(i)
             am.make_pair(1, tmp, 2)
             am.make_pair(0, tmp, 3)
@@ -474,9 +505,6 @@ class TokenProcessor:
 
         am = AutoMachine()
 
-        am.make_pair(0, '', 0)
-        am.make_pair(1, '', 1)
-
         for ch in valid_char[:53]:
             am.make_pair(0, ch, 1)
 
@@ -484,5 +512,33 @@ class TokenProcessor:
             am.make_pair(1, ch, 1)
 
         am.set_end(1)
+
+        return am
+
+    @classmethod
+    def init_char_auto_machine(cls):
+        valid_char = '\\abfnrtv0123456789abcdefABCDEF'
+
+        am = AutoMachine()
+
+        am.make_pair(0, '\'', 0)
+        am.make_pair(0, '\\', 1)
+
+        for i in valid_char[:8]:
+            am.make_pair(1, i, 7)
+
+        for i in range(8):
+            tmp = str(i)
+            am.make_pair(1, tmp, 2)
+            am.make_pair(2, tmp, 3)
+            am.make_pair(3, tmp, 4)
+
+        am.make_pair(1, 'x', 5)
+        am.make_pair(1, 'X', 5)
+
+        for i in valid_char[8:]:
+            am.make_pair(5, i, 6)
+
+        am.set_end(2, 3, 4, 6, 7)
 
         return am
