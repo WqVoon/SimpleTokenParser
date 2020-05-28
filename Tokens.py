@@ -1,3 +1,6 @@
+"""
+    [!] 仅支持 py3
+"""
 import _io
 from os import sys
 from typing import List, Dict, Set, Any
@@ -95,21 +98,144 @@ class AutoMachine:
                 cur_state in self.end_states,
                 is_end)
 
+    @staticmethod
+    def int_auto_machine():
+        """
+        识别整数的自动机，可识别:
+            十进制
+            八进制
+            十六进制
+
+        :return: AutoMachine
+        """
+        valid_char = "abcdefABCDEF"
+        am = AutoMachine()
+
+        am.make_pair(0, '0', 2)
+
+        for i in range(1, 10):
+            am.make_pair(0, str(i), 1)
+
+        for i in range(10):
+            am.make_pair(1, str(i), 1)
+            am.make_pair(4, str(i), 5)
+
+        for i in range(8):
+            am.make_pair(2, str(i), 3)
+            am.make_pair(3, str(i), 3)
+
+        am.make_pair(2, 'x', 4)
+        am.make_pair(2, 'X', 4)
+
+        for i in valid_char:
+            am.make_pair(4, i, 5)
+            am.make_pair(5, i, 5)
+
+        am.set_end(1, 2, 3, 5)
+
+        return am
+
+    @staticmethod
+    def float_auto_machine():
+        """
+        识别浮点数的自动机，目前支持十进制浮点数
+        浮点数格式符合 c 语言风格
+
+        :return: AutoMachine
+        """
+        am = AutoMachine()
+
+        am.make_pair(0, '.', 1)
+        am.make_pair(3, '.', 2)
+
+        for i in range(10):
+            tmp: str = str(i)
+            am.make_pair(1, tmp, 2)
+            am.make_pair(0, tmp, 3)
+            am.make_pair(2, tmp, 2)
+            am.make_pair(3, tmp, 3)
+            am.make_pair(4, tmp, 6)
+            am.make_pair(5, tmp, 6)
+            am.make_pair(6, tmp, 6)
+
+        am.make_pair(2, 'E', 4)
+        am.make_pair(2, 'e', 4)
+
+        am.make_pair(4, '+', 5)
+        am.make_pair(4, '-', 5)
+
+        am.set_end(2, 6)
+
+        return am
+
+    @staticmethod
+    def id_auto_machine():
+        """
+        识别标识符的自动机
+        标识符格式符合 c 语言风格
+
+        :return: AutoMachine
+        """
+        valid_char = \
+            "_abcdefghijklmnopqrstuvwxyz" \
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ" \
+            "0123456789"
+
+        am = AutoMachine()
+
+        for ch in valid_char[:53]:
+            am.make_pair(0, ch, 1)
+
+        for ch in valid_char:
+            am.make_pair(1, ch, 1)
+
+        am.set_end(1)
+
+        return am
+
+    @staticmethod
+    def char_auto_machine():
+        """
+        识别转义字符的自动机
+        包括右斜线后接最多三位七进制
+           右斜线后接[xX]后接至少一位十六进制
+
+        :return: AutoMachine
+        """
+        valid_char = '\\abfnrtv0123456789abcdefABCDEF'
+
+        am = AutoMachine()
+
+        am.make_pair(0, '\'', 0)
+        am.make_pair(0, '\\', 1)
+
+        for i in valid_char[:8]:
+            am.make_pair(1, i, 7)
+
+        for i in range(8):
+            tmp = str(i)
+            am.make_pair(1, tmp, 2)
+            am.make_pair(2, tmp, 3)
+            am.make_pair(3, tmp, 4)
+
+        am.make_pair(1, 'x', 5)
+        am.make_pair(1, 'X', 5)
+
+        for i in valid_char[8:]:
+            am.make_pair(5, i, 6)
+            am.make_pair(6, i, 6)
+
+        am.set_end(2, 3, 4, 6, 7)
+
+        return am
+
 
 class TokenProcessor:
+    """
+    用来解析字符输入并把识别出来的 token流 放入 self.tokens 中
+    """
     buffer: List[str]
     file_handler: _io.TextIOWrapper
-
-    double_size_char = (
-        '->', '--', '-=', '++', '+=',
-        '&=', '&&', '!=', '|=', '||',
-        '<=', '<<', '>=', '>>', '*=',
-        '/=', '%=', '^=', '##', '=='
-    )
-
-    triple_size_char = (
-        '<<=', '>>=', '...'
-    )
 
     KT = (
         'auto', 'char', 'const', 'double', 'enum', 'float',
@@ -119,12 +245,26 @@ class TokenProcessor:
         'break', 'case', 'continue', 'default', 'do', 'else',
         'for', 'goto', 'if', 'return', 'sizeof', 'switch', 'while'
     )
+    double_size_char = (
+        '->', '--', '-=', '++', '+=',
+        '&=', '&&', '!=', '|=', '||',
+        '<=', '<<', '>=', '>>', '*=',
+        '/=', '%=', '^=', '##', '=='
+    )
+    triple_size_char = (
+        '<<=', '>>=', '...'
+    )
     PT = (
         *triple_size_char, *double_size_char,
         '{', '}', '[', ']', '(', ')', '.', '&', '*',
         '+', '-', '~', '!', '/', '%', '<', '>', '^',
         '|', '?', ':', ';', '=', ',', '#'
     )
+
+    char_am = AutoMachine.char_auto_machine()
+    id_am = AutoMachine.id_auto_machine()
+    int_am = AutoMachine.int_auto_machine()
+    float_am = AutoMachine.float_auto_machine()
 
     def __init__(self, fh):
         self.file_handler = fh
@@ -140,19 +280,13 @@ class TokenProcessor:
         self.CT = []
         self.ET = ()
 
-        # TODO: 尝试把自动机设置为类公用的属性
-        self.char_am = TokenProcessor.init_char_auto_machine()
-        self.id_am = TokenProcessor.init_id_auto_machine()
-        self.int_am = TokenProcessor.init_int_auto_machine()
-        self.float_am = TokenProcessor.init_float_auto_machine()
-
+        log("===========[词法分析开始]===========")
         self.scan_file()
+        log("===========[词法分析结束]===========")
 
     def scan_file(self):
         """
-        TODO: 尝试用 init_id_am 的字符串常量简化条件
         扫描 self.file_handler 指向的文件
-        自动被 self.__init__ 调用
 
         :return: None
         """
@@ -366,6 +500,38 @@ class TokenProcessor:
 
         return index
 
+    def insert_token_into_symtable(self, tail, table_name):
+        """
+        将 self.buffer 中的一部分内容插入到 table_name 指定的符号表中
+        同时将这部分内容从 self.buffer 中清空
+
+        :param tail: self.buffer 中有效部分的长度加一
+        :param table_name: 试图插入的符号表名
+        :return: None
+        """
+        token_id = 0
+        full_str = ''.join(self.buffer[:tail])
+        try:
+            token_id = self[table_name].index(full_str)
+        except ValueError:
+            self[table_name].append(full_str)
+            token_id = len(self[table_name]) - 1
+        finally:
+            self.tokens.append((table_name, token_id))
+            self.buffer = self.buffer[tail:]
+
+    def getchar(self):
+        """
+        从 self.file_handler 中读取一个字符
+        如果读取到空字符则抛出 EOFError
+
+        :return: 读取到的字符
+        """
+        tmp = self.file_handler.read(1)
+        if not tmp:
+            raise EOFError
+        return tmp
+
     @staticmethod
     def is_double_size_char(char1, char2):
         """
@@ -392,38 +558,6 @@ class TokenProcessor:
         else:
             return False
 
-    def insert_token_into_symtable(self, tail, table_name):
-        """
-        将 self.buffer 中的一部分内容插入到 table_name 指定的符号表中
-        同时将这部分内容从 self.buffer 中清空
-
-        :param tail: self.buffer 中有效部分的长度加一
-        :param table_name: 试图插入的符号表名
-        :return:
-        """
-        token_id = 0
-        full_str = ''.join(self.buffer[:tail])
-        try:
-            token_id = self[table_name].index(full_str)
-        except ValueError:
-            self[table_name].append(full_str)
-            token_id = len(self[table_name]) - 1
-        finally:
-            self.tokens.append((table_name, token_id))
-            self.buffer = self.buffer[tail:]
-
-    def getchar(self):
-        """
-        从 self.file_handler 中读取一个字符
-        如果读取到空字符则抛出 EOFError
-
-        :return: 读取到的字符
-        """
-        tmp = self.file_handler.read(1)
-        if not tmp:
-            raise EOFError
-        return tmp
-
     def __getitem__(self, item: str):
         if 'iT' == item:
             return self.iT
@@ -444,107 +578,3 @@ class TokenProcessor:
 
     def __iter__(self):
         return self.tokens.__iter__()
-
-    @classmethod
-    def init_int_auto_machine(cls):
-        valid_char = "abcdefABCDEF"
-        am = AutoMachine()
-
-        am.make_pair(0, '0', 2)
-
-        for i in range(1, 10):
-            am.make_pair(0, str(i), 1)
-
-        for i in range(10):
-            am.make_pair(1, str(i), 1)
-            am.make_pair(4, str(i), 5)
-
-        for i in range(8):
-            am.make_pair(2, str(i), 3)
-            am.make_pair(3, str(i), 3)
-
-        am.make_pair(2, 'x', 4)
-        am.make_pair(2, 'X', 4)
-
-        for i in valid_char:
-            am.make_pair(4, i, 5)
-            am.make_pair(5, i, 5)
-
-        am.set_end(1, 2, 3, 5)
-
-        return am
-
-    @classmethod
-    def init_float_auto_machine(cls):
-        am = AutoMachine()
-
-        am.make_pair(0, '.', 1)
-        am.make_pair(3, '.', 2)
-
-        for i in range(10):
-            tmp: str = str(i)
-            am.make_pair(1, tmp, 2)
-            am.make_pair(0, tmp, 3)
-            am.make_pair(2, tmp, 2)
-            am.make_pair(3, tmp, 3)
-            am.make_pair(4, tmp, 6)
-            am.make_pair(5, tmp, 6)
-            am.make_pair(6, tmp, 6)
-
-        am.make_pair(2, 'E', 4)
-        am.make_pair(2, 'e', 4)
-
-        am.make_pair(4, '+', 5)
-        am.make_pair(4, '-', 5)
-
-        am.set_end(2, 6)
-
-        return am
-
-    @classmethod
-    def init_id_auto_machine(cls):
-        valid_char = \
-            "_abcdefghijklmnopqrstuvwxyz" \
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZ" \
-            "0123456789"
-
-        am = AutoMachine()
-
-        for ch in valid_char[:53]:
-            am.make_pair(0, ch, 1)
-
-        for ch in valid_char:
-            am.make_pair(1, ch, 1)
-
-        am.set_end(1)
-
-        return am
-
-    @classmethod
-    def init_char_auto_machine(cls):
-        valid_char = '\\abfnrtv0123456789abcdefABCDEF'
-
-        am = AutoMachine()
-
-        am.make_pair(0, '\'', 0)
-        am.make_pair(0, '\\', 1)
-
-        for i in valid_char[:8]:
-            am.make_pair(1, i, 7)
-
-        for i in range(8):
-            tmp = str(i)
-            am.make_pair(1, tmp, 2)
-            am.make_pair(2, tmp, 3)
-            am.make_pair(3, tmp, 4)
-
-        am.make_pair(1, 'x', 5)
-        am.make_pair(1, 'X', 5)
-
-        for i in valid_char[8:]:
-            am.make_pair(5, i, 6)
-            am.make_pair(6, i, 6)
-
-        am.set_end(2, 3, 4, 6, 7)
-
-        return am
