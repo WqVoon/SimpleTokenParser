@@ -115,7 +115,7 @@ class TokenProcessor:
         'auto', 'char', 'const', 'double', 'enum', 'float',
         'inline', 'int', 'long', 'register', 'restrict',
         'short', 'signed', 'static', 'struct', 'typedef',
-        'union', 'unsigned', 'void', 'volatile',
+        'union', 'unsigned', 'void', 'volatile', 'include',
         'break', 'case', 'continue', 'default', 'do', 'else',
         'for', 'goto', 'if', 'return', 'sizeof', 'switch', 'while'
     )
@@ -266,14 +266,14 @@ class TokenProcessor:
             self.is_an_error('', "单引号内不能为空")
             raise ParseError
 
-        valid_index = 0
+        valid_index = 3
         if quotation_index > 3:
             valid_index, target, is_end = self.char_am.validate(self.buffer)
 
             if not target:
                 valid_index = 2
             if self.buffer[valid_index] != '\'':
-                self.is_an_error(''.join(self.buffer[:valid_index]), "过长的字符:")
+                self.is_an_error(''.join(self.buffer[:quotation_index]), "过长的字符:")
 
             self.buffer[valid_index] = '\''
             valid_index += 1
@@ -344,8 +344,6 @@ class TokenProcessor:
                 try:
                     pre = now
                     now = self.buffer[index]
-                    if now == '\n':
-                        raise ParseError
                 except IndexError:
                     log("尝试从文件中读取一个字符到buffer中")
                     now = self.ch
@@ -353,7 +351,10 @@ class TokenProcessor:
                     self.ch = self.getchar()
                     log("当前buffer:", self.buffer)
                 finally:
+                    if now == '\n':
+                        raise ParseError
                     index += 1
+
         except (EOFError, ParseError) as err:
             log("字符或字符串不完整")
             self.lineno = start_lineno
@@ -542,6 +543,7 @@ class TokenProcessor:
 
         for i in valid_char[8:]:
             am.make_pair(5, i, 6)
+            am.make_pair(6, i, 6)
 
         am.set_end(2, 3, 4, 6, 7)
 
