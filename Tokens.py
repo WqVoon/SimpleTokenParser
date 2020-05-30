@@ -235,7 +235,6 @@ class TokenProcessor:
     用来解析字符输入并把识别出来的 token流 放入 self.tokens 中
     """
     buffer: List[str]
-    file_handler: _io.TextIOWrapper
 
     KT = (
         'auto', 'char', 'const', 'double', 'enum', 'float',
@@ -267,7 +266,17 @@ class TokenProcessor:
     float_am = AutoMachine.float_auto_machine()
 
     def __init__(self, fh):
-        self.file_handler = fh
+        self.src = fh
+
+        if isinstance(fh, _io.TextIOWrapper):
+            self.filename = fh.name
+            self.getchar = self.getchar_from_file
+        elif isinstance(fh, str):
+            self.filename = 'String'
+            self.getchar = self.getchar_from_string()
+        else:
+            raise TypeError("不支持的输入类型")
+
         self.lineno = 1
 
         self.ch = ''
@@ -286,7 +295,7 @@ class TokenProcessor:
 
     def scan_file(self):
         """
-        扫描 self.file_handler 指向的文件
+        扫描 self.src 的内容
 
         :return: None
         """
@@ -460,7 +469,7 @@ class TokenProcessor:
         return target
 
     def is_an_error(self, token: str, msg: str = "不合法的token:"):
-        print("<'%s', line %d>" % (self.file_handler.name, self.lineno),
+        print("<'%s', line %d>" % (self.filename, self.lineno),
               msg, token, file=sys.stderr)
 
     def read_char_until_quotation_mark(self, mark: str):
@@ -520,14 +529,36 @@ class TokenProcessor:
             self.tokens.append((table_name, token_id))
             self.buffer = self.buffer[tail:]
 
-    def getchar(self):
+    def getchar_from_string(self):
         """
-        从 self.file_handler 中读取一个字符
+        当解析的是字符串时
+        从 self.src 中读取一个字符
+        如果到达结尾则抛出 EOFError
+
+        :return: 经闭包处理后的内部函数
+        """
+        index = 0
+
+        def inner_func():
+            nonlocal index
+            try:
+                tmp = self.src[index]
+                index += 1
+                return tmp
+            except IndexError:
+                raise EOFError
+
+        return inner_func
+
+    def getchar_from_file(self):
+        """
+        当解析的是文件时
+        从 self.src 中读取一个字符
         如果读取到空字符则抛出 EOFError
 
         :return: 读取到的字符
         """
-        tmp = self.file_handler.read(1)
+        tmp = self.src.read(1)
         if not tmp:
             raise EOFError
         return tmp
