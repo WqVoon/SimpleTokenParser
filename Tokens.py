@@ -52,13 +52,13 @@ class AutoMachine:
         self.states = {}
         self.end_states = set()
 
-    def make_pair(self, head_index: int, char: str, tail_index: int):
+    def make_pair(self, head_index, char: str, tail_index):
         """
         为某个状态增加一条跳转，若状态不存在则自动添加一个到状态集中
 
-        :param head_index: 跳转弧的开始状态号
+        :param head_index: 跳转弧的开始状态
         :param char: 跳转弧的触发字符
-        :param tail_index: 跳转弧的结束状态号
+        :param tail_index: 跳转弧的结束状态
         :return: None
         """
         self.states.setdefault(head_index, State()).jmp_by[char] = tail_index
