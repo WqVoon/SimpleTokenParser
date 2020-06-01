@@ -126,12 +126,18 @@ class AutoMachine:
 
         am.make_pair(2, 'x', 4)
         am.make_pair(2, 'X', 4)
+        am.make_pair(2, 'b', 6)
+        am.make_pair(2, 'B', 6)
+
+        for i in range(2):
+            am.make_pair(6, str(i), 7)
+            am.make_pair(7, str(i), 7)
 
         for i in valid_char:
             am.make_pair(4, i, 5)
             am.make_pair(5, i, 5)
 
-        am.set_end(1, 2, 3, 5)
+        am.set_end(1, 2, 3, 5, 7)
 
         return am
 
